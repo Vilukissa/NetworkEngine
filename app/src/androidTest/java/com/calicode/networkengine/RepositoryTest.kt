@@ -59,17 +59,44 @@ class RepositoryTest {
     }
 
     @Test
+    fun testResponseCache() {
+        val repo = engine!!.getRepository(TestRepository::class.java)
+
+        // Default response from TestRepository
+        val result: Data = runBlocking { repo.get() }
+        Assert.assertEquals("TEST_CALL_OK", result.data)
+
+        // Change the response
+        repo.returnedResponse = "SOMETHING_ELSE"
+
+        val cacheResult: Data = runBlocking { repo.get() }
+        Assert.assertEquals("TEST_CALL_OK", cacheResult.data)
+
+        // Fresh operation
+        val somethingElseResult: Data = runBlocking { repo.get("1234") }
+        Assert.assertEquals("SOMETHING_ELSE", somethingElseResult.data)
+    }
+
+    @Test
     fun testRepositoryNewRequestMultipleCallers() {
         val repo = engine!!.getRepository(TestRepository::class.java)
 
         val resultList = ArrayList<Data>()
-        runBlocking {
-            val a = GlobalScope.async { repo.get() }
-            val b = GlobalScope.async { repo.get() }
-            val c = GlobalScope.async { repo.get() }
-            resultList.addAll(listOf(a.await(), b.await(), c.await()))
+        for (i in 0..9) {
+            runBlocking {
+                Log.d(TAG, "runBlocking->")
+                val a = GlobalScope.async { repo.get() }
+                val b = GlobalScope.async { repo.get() }
+                val c = GlobalScope.async { repo.get() }
+                val d = GlobalScope.async { repo.get() }
+                val e = GlobalScope.async { repo.get() }
+                val f = GlobalScope.async { repo.get() }
+                resultList.addAll(listOf(a.await(), b.await(), c.await(), d.await(), e.await(), f.await()))
+                Log.d(TAG, "/runBlocking")
+            }
         }
-        Assert.assertEquals(3, resultList.size)
+        Log.d(TAG, "---Assert-->")
+        Assert.assertEquals(60, resultList.size)
     }
 
     @Test
@@ -91,6 +118,8 @@ class RepositoryTest {
 
     class TestRepository(networkManager: NetworkManager) : Repository(networkManager) {
 
+        var returnedResponse: String? = "TEST_CALL_OK"
+
         fun initCacheForTests(data: Any) {
             CacheProvider.putData(this.javaClass, Data(DEFAULT_DATA_ID, data))
         }
@@ -99,7 +128,7 @@ class RepositoryTest {
         override fun createCallAsync(params: Any?): Deferred<Response<*>> = GlobalScope.async {
                 Log.d(TAG, "Test operation coroutine")
                 delay(5000)
-                Response.success("TEST_CALL_OK")
+                Response.success(returnedResponse)
             }
     }
 

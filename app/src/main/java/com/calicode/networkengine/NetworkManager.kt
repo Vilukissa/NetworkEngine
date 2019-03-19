@@ -45,25 +45,34 @@ class NetworkManager internal constructor(
 
     fun <T> createApi(apiClass: Class<T>): T = retrofit.create(apiClass)
 
-    @Suppress("UnnecessaryVariable")
+    @Suppress("UnnecessaryVariable", "LiftReturnOrAssignment")
     suspend fun execute(repositoryClass: Class<out Repository>, dataId: String,
                         call: Deferred<Response<*>>,
                         resultEditor: ResultEditor? = null): Data {
         val operationId = createOperationId(repositoryClass, dataId)
         var operation = runningOperations[operationId]
         val result: Data
+
         if (operation == null) {
             Log.d(TAG, "Creating new operation $operationId")
-            operation = Operation(dataId)
+            operation = Operation(dataId, call)
             // TODO: check running operations count...
             // if (limit reached) ->
             // else ->
-            result = operation.run(call)
+             runningOperations[operationId] = operation
+             result = operation.await()
         } else {
             Log.d(TAG, "Operation ($operationId) already running, waiting for it to complete")
             result = operation.await()
         }
+
+        Log.d(TAG, "Operation ($operationId) finished!")
+        runningOperations.remove(operationId)
+
         // TODO: edit result...
+
+        CacheProvider.putData(repositoryClass, result)
+
         return result
     }
 
@@ -71,18 +80,12 @@ class NetworkManager internal constructor(
         return "${repositoryClass.canonicalName}_$dataId"
     }
 
-    class Operation(private val dataId: String) {
+    class Operation(val dataId: String, private val job: Deferred<Response<*>>) {
 
-        private var job: Deferred<Response<*>>? = null
-
-        suspend fun run(call: Deferred<Response<*>>): Data {
-            Log.d(TAG, "Operation.run")
-            if (job != null) throw IllegalStateException("Can't call run(...) more than once!")
-            job = call
-            return handleResponse(job!!.await())
+        suspend fun await(): Data {
+            Log.d(TAG, "Operation.await()")
+            return handleResponse(job.await())
         }
-
-        suspend fun await(): Data = handleResponse(job!!.await())
 
         private fun handleResponse(response: Response<*>): Data {
             // TODO: proper error handling...
