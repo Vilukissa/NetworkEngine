@@ -3,6 +3,8 @@ package com.calicode.networkengine
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
+const val ZERO_CACHE = 0 // Means that CacheProvider wont hold results for the Repository
+
 /**
  * Holds every operation's(repo) data.
  * Structure:
@@ -39,6 +41,7 @@ object CacheProvider {
         private val items = LinkedList<Data>()
 
         fun add(element: Data) {
+            if (sizeLimit == ZERO_CACHE) return
             var previousIndex: Int? = null
             for ((index, value) in items.withIndex()) {
                 if (value.id == element.id) {
