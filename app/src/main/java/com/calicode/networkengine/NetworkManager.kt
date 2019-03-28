@@ -7,21 +7,23 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.jakewharton.retrofit2.adapter.kotlin.coroutines.CoroutineCallAdapterFactory
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import okhttp3.logging.HttpLoggingInterceptor.Level
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.jackson.JacksonConverterFactory
-import java.util.concurrent.ConcurrentHashMap
 
 class NetworkManager internal constructor(
         baseUrl: String,
         private val runningOperationsLimit: Int) {
 
     private val retrofit: Retrofit
-    private val runningOperations = ConcurrentHashMap<String, Operation>()
-    private val pendingOperations = ConcurrentHashMap<String, Operation>()
+    private val runningOperations = HashMap<String, Operation>()
+    private val pendingOperations = ArrayList<Operation>()
 
     init {
         val objectMapper = ObjectMapper()
@@ -49,25 +51,52 @@ class NetworkManager internal constructor(
     suspend fun execute(repositoryClass: Class<out Repository>, dataId: String,
                         call: Deferred<Response<*>>,
                         resultEditor: ResultEditor? = null): Data {
-        val operationId = createOperationId(repositoryClass, dataId)
-        var operation = runningOperations[operationId]
+
+        val operationId: String = createOperationId(repositoryClass, dataId)
+        var operation: Operation? = runningOperations.withSync { ops -> ops[operationId] }
         val result: Data
 
         if (operation == null) {
             Log.d(TAG, "Creating new operation $operationId")
             operation = Operation(dataId, call)
-            // TODO: check running operations count...
-            // if (limit reached) ->
-            // else ->
-             runningOperations[operationId] = operation
-             result = operation.await()
+
+            val shouldWait: Boolean = runningOperations.withSync { ops ->
+                Log.d(TAG, "Running operations size check ${ops.size} == $runningOperationsLimit")
+                if (ops.size == runningOperationsLimit) true
+                else {
+                    // Add running operation
+                    ops[operationId] = operation
+                    false
+                }
+            }
+
+            if (shouldWait) {
+                // Add pending operation
+                pendingOperations.withSync { ops -> ops.add(operation) }
+                result = operation.waitForRun()
+            } else {
+                result = operation.await()
+            }
+
         } else {
             Log.d(TAG, "Operation ($operationId) already running, waiting for it to complete")
             result = operation.await()
         }
 
         Log.d(TAG, "Operation ($operationId) finished!")
-        runningOperations.remove(operationId)
+        // Remove running operation
+        runningOperations.withSync { ops -> ops.remove(operationId) }
+
+        pendingOperations.withSync { ops ->
+            val pendingOperationsCount = ops.size
+            if (pendingOperationsCount > 0) {
+                val pendingOperation = ops.elementAt(pendingOperationsCount - 1)
+                // Remove pending operation
+                ops.remove(pendingOperation)
+                Log.d(TAG, "Starting pending operation ($operationId)")
+                pendingOperation.isPending = false
+            }
+        }
 
         // TODO: edit result...
 
@@ -82,8 +111,23 @@ class NetworkManager internal constructor(
 
     class Operation(val dataId: String, private val job: Deferred<Response<*>>) {
 
+        var isPending = false
+
         suspend fun await(): Data {
             Log.d(TAG, "Operation.await()")
+            return handleResponse(job.await())
+        }
+
+        suspend fun waitForRun(): Data {
+            Log.d(TAG, "Operation.waitForRun()")
+            isPending = true
+            withContext(Dispatchers.Default) {
+                while (isPending) {
+                    Log.d(TAG, "Delaying operation for 1 sec.")
+                    delay(1000)
+                }
+            }
+            Log.d(TAG, "Operation.waitForRun() delaying ended")
             return handleResponse(job.await())
         }
 

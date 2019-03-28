@@ -21,7 +21,10 @@ class RepositoryTest {
 
     @Before
     fun setUp() {
-        engine = createEngine(listOf(TestRepository::class.java, TestRepositoryWithApi::class.java),
+        engine = createEngine(
+                listOf(TestRepository::class.java,
+                        TestRepositoryWithApi::class.java,
+                        TestRepositoryWithoutCache::class.java),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .runningOperationsLimit(5)
@@ -79,7 +82,7 @@ class RepositoryTest {
 
     @Test
     fun testRepositoryNewRequestMultipleCallers() {
-        val repo = engine!!.getRepository(TestRepository::class.java)
+        val repo = engine!!.getRepository(TestRepositoryWithoutCache::class.java)
 
         val resultList = ArrayList<Data>()
         for (i in 0..9) {
@@ -91,7 +94,8 @@ class RepositoryTest {
                 val d = GlobalScope.async { repo.get() }
                 val e = GlobalScope.async { repo.get() }
                 val f = GlobalScope.async { repo.get() }
-                resultList.addAll(listOf(a.await(), b.await(), c.await(), d.await(), e.await(), f.await()))
+                resultList.addAll(listOf(a.await(), b.await(), c.await(),
+                        d.await(), e.await(), f.await()))
                 Log.d(TAG, "/runBlocking")
             }
         }
@@ -106,6 +110,40 @@ class RepositoryTest {
 
         val result: Data = runBlocking { repo.get() }
         Assert.assertEquals("json_test_ok", (result.data as TestResponse).item)
+    }
+
+    @Test
+    fun testOperationCount() {
+        // We need to create different engine for this test
+        val tmpEngine = createEngine(
+                listOf(TestRepository::class.java),
+                NetworkManagerBuilder()
+                        .baseUrl(RESTMockServer.getUrl())
+                        .runningOperationsLimit(1) // This is the important part!
+                        .build())
+
+        val repo = tmpEngine.getRepository(TestRepository::class.java)
+
+        val startTime = System.currentTimeMillis()
+        runBlocking {
+            val a = GlobalScope.async {
+                repo.get("1122")
+            }
+            val b = GlobalScope.async {
+                repo.get("2233")
+            }
+            listOf(a.await(), b.await())
+        }
+        val endTime = System.currentTimeMillis()
+        // Only way to test this is to calculate the total time which
+        // should be first operation + second operation, because if the
+        // cache limit is 2, then both operations could run parallel
+        // giving the total time something like 3 seconds. When second
+        // operation needs to wait the first, the total time is then
+        // near 6 seconds.
+        val secondOperationTime = endTime - startTime
+        Log.d(TAG, "Operations took ${secondOperationTime}ms")
+        Assert.assertTrue(secondOperationTime in 5801..6199) // Give some space (400ms)
     }
 
     @Suppress("DeferredIsResult")
@@ -125,9 +163,9 @@ class RepositoryTest {
         }
 
         // This would be the Retrofit.Call (Deferred)
-        override fun createCallAsync(params: Any?): Deferred<Response<*>> = GlobalScope.async {
-                Log.d(TAG, "Test operation coroutine")
-                delay(5000)
+        override fun createCallAsync(params: Any?): Deferred<Response<*>> = lazyAsync {
+                Log.d(TAG, "${this@TestRepository::class.java.simpleName} coroutine")
+                delay(3000)
                 Response.success(returnedResponse)
             }
     }
@@ -137,5 +175,14 @@ class RepositoryTest {
         private val api: TestApi = networkManager.createApi(TestApi::class.java)
 
         override fun createCallAsync(params: Any?): Deferred<Response<*>> = api.getItem()
+    }
+
+    class TestRepositoryWithoutCache(networkManager: NetworkManager)
+        : Repository(networkManager, ZERO_CACHE) {
+        override fun createCallAsync(params: Any?): Deferred<Response<*>> = lazyAsync {
+            Log.d(TAG, "${this@TestRepositoryWithoutCache::class.java.simpleName} coroutine")
+            delay(4000)
+            Response.success("NO_CACHE_RESULT")
+        }
     }
 }
