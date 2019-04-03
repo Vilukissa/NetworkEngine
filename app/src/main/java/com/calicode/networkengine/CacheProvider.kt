@@ -8,8 +8,8 @@ const val ZERO_CACHE = 0 // Means that CacheProvider wont hold results for the R
 /**
  * Holds every operation's(repo) data.
  * Structure:
- * key = Repository class (name)
- * TODO: ---
+ * key = Repository's Class object
+ * value = Data class
  */
 object CacheProvider {
     private val dataHolder: ConcurrentHashMap<Class<out Repository>, DataList> = ConcurrentHashMap()
@@ -18,22 +18,28 @@ object CacheProvider {
         dataHolder[repoClass] = DataList(size)
     }
 
+    fun deallocate(repoClass: Class<out Repository>) {
+        dataHolder.remove(repoClass)
+    }
+
     fun getData(repoClass: Class<out Repository>, dataId: String): Data? {
-        // TODO: repo not allocated exception...
-        return dataHolder[repoClass]?.find(dataId)
+        return getRepository(repoClass).find(dataId)
     }
 
     fun putData(repoClass: Class<out Repository>, data: Data) {
-        // TODO: repo not allocated exception...
-        dataHolder[repoClass]?.add(data)
+        getRepository(repoClass).add(data)
     }
 
     fun removeData(repoClass: Class<out Repository>, dataId: String) {
-        // TODO: repo not allocated exception...
-        TODO("Not implemented")
+        getRepository(repoClass).remove(dataId)
     }
 
-    fun clear() { TODO("Not implemented") }
+    fun clear() {
+        dataHolder.clear()
+    }
+
+    private fun getRepository(repoClass: Class<out Repository>) =
+            dataHolder[repoClass] ?: throw RepositoryNotFoundException()
 
     data class Data(val id: String, val data: Any)
 
@@ -42,14 +48,10 @@ object CacheProvider {
 
         fun add(element: Data) {
             if (sizeLimit == ZERO_CACHE) return
-            var previousIndex: Int? = null
-            for ((index, value) in items.withIndex()) {
-                if (value.id == element.id) {
-                    previousIndex = index
-                    break
-                }
-            }
-            if (previousIndex == null) {
+
+            val previousIndex: Int = items.indexOfFirst { item -> item.id == element.id }
+
+            if (previousIndex == -1) { // Not found
                 if (items.size == sizeLimit) items.removeLast()
                 items.add(element)
             } else {
@@ -57,8 +59,15 @@ object CacheProvider {
             }
         }
 
+        fun remove(dataId: String) {
+            items.find { item -> item.id == dataId }
+                    ?.let { foundItem -> items.remove(foundItem) }
+        }
+
         fun find(dataId: String): Data? {
             return items.find { it.id == dataId }
         }
     }
+
+    class RepositoryNotFoundException : Exception()
 }
