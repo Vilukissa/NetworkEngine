@@ -16,6 +16,7 @@ import okhttp3.logging.HttpLoggingInterceptor.Level
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.jackson.JacksonConverterFactory
+import java.util.*
 
 class NetworkManager internal constructor(
         baseUrl: String,
@@ -50,6 +51,7 @@ class NetworkManager internal constructor(
     @Suppress("UnnecessaryVariable", "LiftReturnOrAssignment")
     suspend fun execute(repositoryClass: Class<out Repository>, dataId: String,
                         call: Deferred<Response<*>>,
+                        cacheProvider: CacheProvider,
                         resultEditor: ResultEditor? = null): Data {
 
         val operationId: String = createOperationId(repositoryClass, dataId)
@@ -100,7 +102,7 @@ class NetworkManager internal constructor(
 
         // TODO: edit result...
 
-        CacheProvider.putData(repositoryClass, result)
+        cacheProvider.putData(repositoryClass, result)
 
         return result
     }
@@ -109,7 +111,7 @@ class NetworkManager internal constructor(
         return "${repositoryClass.canonicalName}_$dataId"
     }
 
-    class Operation(val dataId: String, private val job: Deferred<Response<*>>) {
+    private class Operation(private val dataId: String, private val job: Deferred<Response<*>>) {
 
         var isPending = false
 

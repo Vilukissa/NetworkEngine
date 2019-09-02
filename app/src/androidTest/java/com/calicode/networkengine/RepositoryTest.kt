@@ -154,12 +154,18 @@ class RepositoryTest {
 
     class TestResponse(val item: String)
 
-    class TestRepository(networkManager: NetworkManager) : Repository(networkManager) {
+    class TestRepository(networkManager: NetworkManager, cacheProvider: CacheProvider)
+        : Repository(networkManager, cacheProvider) {
 
         var returnedResponse: String? = "TEST_CALL_OK"
 
         fun initCacheForTests(data: Any) {
-            CacheProvider.putData(this.javaClass, Data(DEFAULT_DATA_ID, data))
+            // Update the cache via Reflection
+            this::class.java.superclass.getDeclaredField("cacheProvider").apply {
+                isAccessible = true
+                (get(this@TestRepository) as CacheProvider).putData(
+                        this@TestRepository::class.java, Data(DEFAULT_DATA_ID, data))
+            }
         }
 
         // This would be the Retrofit.Call (Deferred)
@@ -170,15 +176,17 @@ class RepositoryTest {
             }
     }
 
-    class TestRepositoryWithApi(networkManager: NetworkManager) : Repository(networkManager) {
+    class TestRepositoryWithApi(networkManager: NetworkManager, cacheProvider: CacheProvider)
+        : Repository(networkManager, cacheProvider) {
 
         private val api: TestApi = networkManager.createApi(TestApi::class.java)
 
         override fun createCallAsync(params: Any?): Deferred<Response<*>> = api.getItem()
     }
 
-    class TestRepositoryWithoutCache(networkManager: NetworkManager)
-        : Repository(networkManager, ZERO_CACHE) {
+    class TestRepositoryWithoutCache(networkManager: NetworkManager, cacheProvider: CacheProvider)
+        : Repository(networkManager, cacheProvider, ZERO_CACHE) {
+
         override fun createCallAsync(params: Any?): Deferred<Response<*>> = lazyAsync {
             Log.d(TAG, "${this@TestRepositoryWithoutCache::class.java.simpleName} coroutine")
             delay(4000)

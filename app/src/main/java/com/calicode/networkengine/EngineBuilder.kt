@@ -2,19 +2,38 @@ package com.calicode.networkengine
 
 private const val DEFAULT_RUNNING_OPERATION_LIMIT = 1
 
-fun createEngine(repositories: List<Class<out Repository>>, networkManager: NetworkManager): NetworkEngine {
+/** Structure of the engine:
+ *
+ *                      NETWORK ENGINE
+ *                            |
+ *            _______________/|\_________________
+ *           |                |                  |
+ *      NETWORK MGR     CACHE PROVIDER      REPOSITORIES
+ *           |                |                  |
+ *      OPERATIONS        OPS DATA              API (TODO!)
+ *
+ *
+ *
+ * Usage of the engine:
+ * - create API calls via repositories
+ * - ....
+ */
+fun createEngine(repositories: List<Class<out Repository>>,
+                 networkManager: NetworkManager): NetworkEngine {
     val repoInstanceList = HashMap<Class<out Repository>, Repository>()
+    val cacheProvider = CacheProvider()
     try {
         repositories.forEach { repoClass ->
-            val nwConstructor = repoClass.getDeclaredConstructor(NetworkManager::class.java)
-            repoInstanceList[repoClass] = nwConstructor.newInstance(networkManager)
+            val nwConstructor = repoClass.getDeclaredConstructor(NetworkManager::class.java, CacheProvider::class.java)
+            repoInstanceList[repoClass] = nwConstructor.newInstance(networkManager, cacheProvider)
         }
     } catch (exception: Exception) {
         // TODO: debug check...?
         exception.printStackTrace()
-        throw IllegalStateException("Something went wrong when trying to create ${NetworkEngine::class.java.simpleName}!")
+        throw IllegalStateException(
+                "Something went wrong when trying to create ${NetworkEngine::class.java.simpleName}!")
     }
-    return NetworkEngine(networkManager, repoInstanceList)
+    return NetworkEngine(networkManager, cacheProvider, repoInstanceList)
 }
 
 class NetworkManagerBuilder {
@@ -40,15 +59,18 @@ class NetworkManagerBuilder {
 }
 
 class NetworkEngine(private val networkManager: NetworkManager,
+                    private val cacheProvider: CacheProvider,
                     private val repositories: Map<Class<out Repository>, Repository>) {
 
     @Suppress("UNCHECKED_CAST")
     fun <T: Repository> getRepository(repoClass: Class<T>): T {
         return repositories[repoClass]?.let { it as T }
-                ?: throw IllegalStateException("Did not find repository class' instance (${repoClass.canonicalName})")
+                ?: throw IllegalStateException(
+                        "Did not find repository class' instance (${repoClass.canonicalName})")
     }
 
     fun cancelOperations() { TODO() }
 
-    fun executeOperationWithoutRepository() { TODO() }
+    // TODO: use public with networkManager and cacheProvider or just publish
+    // the functions that are allowed to be called anywhere?
 }

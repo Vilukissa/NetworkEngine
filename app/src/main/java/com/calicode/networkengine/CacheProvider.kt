@@ -11,7 +11,7 @@ const val ZERO_CACHE = 0 // Means that CacheProvider wont hold results for the R
  * key = Repository's Class object
  * value = Data class
  */
-object CacheProvider {
+class CacheProvider internal constructor() {
     private val dataHolder: ConcurrentHashMap<Class<out Repository>, DataList> = ConcurrentHashMap()
 
     fun allocate(repoClass: Class<out Repository>, size: Int) {
@@ -43,7 +43,7 @@ object CacheProvider {
 
     data class Data(val id: String, val data: Any)
 
-    class DataList(private val sizeLimit: Int) {
+    internal class DataList(private val sizeLimit: Int) {
         private val items = LinkedList<Data>()
 
         fun add(element: Data) {
@@ -69,5 +69,5 @@ object CacheProvider {
         }
     }
 
-    class RepositoryNotFoundException : Exception()
+    internal class RepositoryNotFoundException : Exception()
 }
