@@ -10,7 +10,7 @@ private const val DEFAULT_RUNNING_OPERATION_LIMIT = 1
  *           |                |                  |
  *      NETWORK MGR     CACHE PROVIDER      REPOSITORIES
  *           |                |                  |
- *      OPERATIONS        OPS DATA              API (TODO!)
+ *      OPERATIONS        OPS DATA              API
  *
  *
  *
@@ -18,14 +18,18 @@ private const val DEFAULT_RUNNING_OPERATION_LIMIT = 1
  * - create API calls via repositories
  * - ....
  */
-fun createEngine(repositories: List<Class<out Repository>>,
-                 networkManager: NetworkManager): NetworkEngine {
-    val repoInstanceList = HashMap<Class<out Repository>, Repository>()
+fun createEngine(repositoryApiPairs: List<Pair<Class<out Repository<*>>, Class<out Any>>>,
+                   networkManager: NetworkManager): NetworkEngine {
+    val repoInstanceList = HashMap<Class<out Repository<*>>, Repository<*>>()
     val cacheProvider = CacheProvider()
     try {
-        repositories.forEach { repoClass ->
-            val nwConstructor = repoClass.getDeclaredConstructor(NetworkManager::class.java, CacheProvider::class.java)
-            repoInstanceList[repoClass] = nwConstructor.newInstance(networkManager, cacheProvider)
+        repositoryApiPairs.forEach { repoApiPair ->
+            val repoClass = repoApiPair.first
+            val apiClass = repoApiPair.second
+            val apiForRepo = networkManager.createApi(apiClass)
+            val repository = repoClass.getDeclaredConstructor(apiClass).newInstance(apiForRepo)
+            repoInstanceList[repoClass] = repository
+            cacheProvider.allocate(repoClass, repository.cacheSize)
         }
     } catch (exception: Exception) {
         // TODO: debug check...?
@@ -59,14 +63,22 @@ class NetworkManagerBuilder {
 }
 
 class NetworkEngine(private val networkManager: NetworkManager,
-                    private val cacheProvider: CacheProvider,
-                    private val repositories: Map<Class<out Repository>, Repository>) {
+                      private val cacheProvider: CacheProvider,
+                      private val repositories: Map<Class<out Repository<*>>, Repository<*>>) {
 
     @Suppress("UNCHECKED_CAST")
-    fun <T: Repository> getRepository(repoClass: Class<T>): T {
+    fun <T: Repository<*>> getRepository(repoClass: Class<T>): T {
         return repositories[repoClass]?.let { it as T }
                 ?: throw IllegalStateException(
                         "Did not find repository class' instance (${repoClass.canonicalName})")
+    }
+
+    suspend fun <T: Repository<*>> callRepository(repoClass: Class<T>, params: Any? = null): CacheProvider.Data {
+        val repo = getRepository(repoClass)
+        val dataId = repo.idForCall(params)
+        return cacheProvider.getData(repoClass, dataId)
+                ?: networkManager.execute(repoClass, dataId,
+                        repo.createCallAsync(params), cacheProvider, repo.resultEditor())
     }
 
     fun cancelOperations() { TODO() }

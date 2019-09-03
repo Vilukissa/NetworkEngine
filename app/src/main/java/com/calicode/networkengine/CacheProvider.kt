@@ -12,25 +12,25 @@ const val ZERO_CACHE = 0 // Means that CacheProvider wont hold results for the R
  * value = Data class
  */
 class CacheProvider internal constructor() {
-    private val dataHolder: ConcurrentHashMap<Class<out Repository>, DataList> = ConcurrentHashMap()
+    private val dataHolder: ConcurrentHashMap<Class<out Repository<*>>, DataList> = ConcurrentHashMap()
 
-    fun allocate(repoClass: Class<out Repository>, size: Int) {
+    fun allocate(repoClass: Class<out Repository<*>>, size: Int) {
         dataHolder[repoClass] = DataList(size)
     }
 
-    fun deallocate(repoClass: Class<out Repository>) {
+    fun deallocate(repoClass: Class<out Repository<*>>) {
         dataHolder.remove(repoClass)
     }
 
-    fun getData(repoClass: Class<out Repository>, dataId: String): Data? {
+    fun getData(repoClass: Class<out Repository<*>>, dataId: String): Data? {
         return getRepository(repoClass).find(dataId)
     }
 
-    fun putData(repoClass: Class<out Repository>, data: Data) {
+    fun putData(repoClass: Class<out Repository<*>>, data: Data) {
         getRepository(repoClass).add(data)
     }
 
-    fun removeData(repoClass: Class<out Repository>, dataId: String) {
+    fun removeData(repoClass: Class<out Repository<*>>, dataId: String) {
         getRepository(repoClass).remove(dataId)
     }
 
@@ -38,7 +38,7 @@ class CacheProvider internal constructor() {
         dataHolder.clear()
     }
 
-    private fun getRepository(repoClass: Class<out Repository>) =
+    private fun getRepository(repoClass: Class<out Repository<*>>) =
             dataHolder[repoClass] ?: throw RepositoryNotFoundException()
 
     data class Data(val id: String, val data: Any)

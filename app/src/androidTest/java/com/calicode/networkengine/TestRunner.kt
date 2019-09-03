@@ -7,6 +7,7 @@ import io.appflate.restmock.RESTMockServerStarter
 import io.appflate.restmock.android.AndroidAssetsFileParser
 import io.appflate.restmock.android.AndroidLogger
 
+@Suppress("unused")
 class TestRunner : AndroidJUnitRunner() {
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)

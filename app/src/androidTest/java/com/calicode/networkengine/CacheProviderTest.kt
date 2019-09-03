@@ -106,10 +106,12 @@ class CacheProviderTest {
 
     private fun clearMap() {
         // Create new instance
-        mapField.set(cacheProvider, ConcurrentHashMap<Class<out Repository>, DataList>())
+        mapField.set(cacheProvider, ConcurrentHashMap<Class<out Repository<*>>, DataList>())
     }
 
-    private class TestRepo(m: NetworkManager, c: CacheProvider) : Repository(m, c) {
+    private class TestRepo(api: PlaceholderApi) : Repository<PlaceholderApi>(api) {
+        override fun idForCall(params: Any?): String = DEFAULT_DATA_ID
+
         override fun createCallAsync(params: Any?): Deferred<Response<*>> = GlobalScope.async {
             Response.success("")
         }

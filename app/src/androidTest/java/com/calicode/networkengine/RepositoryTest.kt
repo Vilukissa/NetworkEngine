@@ -22,9 +22,9 @@ class RepositoryTest {
     @Before
     fun setUp() {
         engine = createEngine(
-                listOf(TestRepository::class.java,
-                        TestRepositoryWithApi::class.java,
-                        TestRepositoryWithoutCache::class.java),
+                listOf(Pair(TestRepository::class.java, PlaceholderApi::class.java),
+                        Pair(TestRepositoryWithApi::class.java, TestApi::class.java),
+                        Pair(TestRepositoryWithoutCache::class.java, PlaceholderApi::class.java)),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .runningOperationsLimit(5)
@@ -33,6 +33,7 @@ class RepositoryTest {
 
     @After
     fun tearDown() {
+        RESTMockServer.reset()
         engine = null
     }
 
@@ -46,54 +47,52 @@ class RepositoryTest {
     @Test
     fun testRepositoryCached() {
         val testResult = "THIS_IS_TEST_1"
-        val repo = engine!!.getRepository(TestRepository::class.java)
-        repo.initCacheForTests(testResult)
+        // Update the cache via Reflection
+        engine!!::class.java.getDeclaredField("cacheProvider").apply {
+            isAccessible = true
+            (get(engine) as CacheProvider).putData(
+                    TestRepository::class.java, Data(DEFAULT_DATA_ID, testResult))
+        }
 
-        val result: Data = runBlocking { repo.get() }
+        val result: Data = runBlocking { engine!!.callRepository(TestRepository::class.java) }
         Assert.assertEquals(testResult, result.data)
     }
 
     @Test
     fun testRepositoryNewRequest() {
-        val repo = engine!!.getRepository(TestRepository::class.java)
-
-        val result: Data = runBlocking { repo.get() }
+        val result: Data = runBlocking { engine!!.callRepository(TestRepository::class.java) }
         Assert.assertEquals("TEST_CALL_OK", result.data)
     }
 
     @Test
     fun testResponseCache() {
-        val repo = engine!!.getRepository(TestRepository::class.java)
-
         // Default response from TestRepository
-        val result: Data = runBlocking { repo.get() }
+        val result: Data = runBlocking { engine!!.callRepository(TestRepository::class.java) }
         Assert.assertEquals("TEST_CALL_OK", result.data)
 
         // Change the response
-        repo.returnedResponse = "SOMETHING_ELSE"
+        engine!!.getRepository(TestRepository::class.java).returnedResponse = "SOMETHING_ELSE"
 
-        val cacheResult: Data = runBlocking { repo.get() }
+        val cacheResult: Data = runBlocking { engine!!.callRepository(TestRepository::class.java) }
         Assert.assertEquals("TEST_CALL_OK", cacheResult.data)
 
         // Fresh operation
-        val somethingElseResult: Data = runBlocking { repo.get("1234") }
+        val somethingElseResult: Data = runBlocking { engine!!.callRepository(TestRepository::class.java, "1234") }
         Assert.assertEquals("SOMETHING_ELSE", somethingElseResult.data)
     }
 
     @Test
     fun testRepositoryNewRequestMultipleCallers() {
-        val repo = engine!!.getRepository(TestRepositoryWithoutCache::class.java)
-
         val resultList = ArrayList<Data>()
         for (i in 0..9) {
             runBlocking {
                 Log.d(TAG, "runBlocking->")
-                val a = GlobalScope.async { repo.get() }
-                val b = GlobalScope.async { repo.get() }
-                val c = GlobalScope.async { repo.get() }
-                val d = GlobalScope.async { repo.get() }
-                val e = GlobalScope.async { repo.get() }
-                val f = GlobalScope.async { repo.get() }
+                val a = GlobalScope.async { engine!!.callRepository(TestRepositoryWithoutCache::class.java) }
+                val b = GlobalScope.async { engine!!.callRepository(TestRepositoryWithoutCache::class.java) }
+                val c = GlobalScope.async { engine!!.callRepository(TestRepositoryWithoutCache::class.java) }
+                val d = GlobalScope.async { engine!!.callRepository(TestRepositoryWithoutCache::class.java) }
+                val e = GlobalScope.async { engine!!.callRepository(TestRepositoryWithoutCache::class.java) }
+                val f = GlobalScope.async { engine!!.callRepository(TestRepositoryWithoutCache::class.java) }
                 resultList.addAll(listOf(a.await(), b.await(), c.await(),
                         d.await(), e.await(), f.await()))
                 Log.d(TAG, "/runBlocking")
@@ -105,10 +104,9 @@ class RepositoryTest {
 
     @Test
     fun testRepositoryWithApi() {
-        val repo = engine!!.getRepository(TestRepositoryWithApi::class.java)
         RESTMockServer.whenGET(pathEndsWith("/test")).thenReturnFile("test.json")
 
-        val result: Data = runBlocking { repo.get() }
+        val result: Data = runBlocking { engine!!.callRepository(TestRepositoryWithApi::class.java) }
         Assert.assertEquals("json_test_ok", (result.data as TestResponse).item)
     }
 
@@ -116,21 +114,19 @@ class RepositoryTest {
     fun testOperationCount() {
         // We need to create different engine for this test
         val tmpEngine = createEngine(
-                listOf(TestRepository::class.java),
+                listOf(Pair(TestRepository::class.java, PlaceholderApi::class.java)),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .runningOperationsLimit(1) // This is the important part!
                         .build())
 
-        val repo = tmpEngine.getRepository(TestRepository::class.java)
-
         val startTime = System.currentTimeMillis()
         runBlocking {
             val a = GlobalScope.async {
-                repo.get("1122")
+                tmpEngine.callRepository(TestRepository::class.java, "1122")
             }
             val b = GlobalScope.async {
-                repo.get("2233")
+                tmpEngine.callRepository(TestRepository::class.java, "2233")
             }
             listOf(a.await(), b.await())
         }
@@ -154,19 +150,11 @@ class RepositoryTest {
 
     class TestResponse(val item: String)
 
-    class TestRepository(networkManager: NetworkManager, cacheProvider: CacheProvider)
-        : Repository(networkManager, cacheProvider) {
+    class TestRepository(api: PlaceholderApi) : Repository<PlaceholderApi>(api) {
 
         var returnedResponse: String? = "TEST_CALL_OK"
 
-        fun initCacheForTests(data: Any) {
-            // Update the cache via Reflection
-            this::class.java.superclass.getDeclaredField("cacheProvider").apply {
-                isAccessible = true
-                (get(this@TestRepository) as CacheProvider).putData(
-                        this@TestRepository::class.java, Data(DEFAULT_DATA_ID, data))
-            }
-        }
+        override fun idForCall(params: Any?): String = if (params is String) params else DEFAULT_DATA_ID
 
         // This would be the Retrofit.Call (Deferred)
         override fun createCallAsync(params: Any?): Deferred<Response<*>> = lazyAsync {
@@ -176,16 +164,14 @@ class RepositoryTest {
             }
     }
 
-    class TestRepositoryWithApi(networkManager: NetworkManager, cacheProvider: CacheProvider)
-        : Repository(networkManager, cacheProvider) {
-
-        private val api: TestApi = networkManager.createApi(TestApi::class.java)
+    class TestRepositoryWithApi(api: TestApi) : Repository<TestApi>(api) {
+        override fun idForCall(params: Any?): String = DEFAULT_DATA_ID
 
         override fun createCallAsync(params: Any?): Deferred<Response<*>> = api.getItem()
     }
 
-    class TestRepositoryWithoutCache(networkManager: NetworkManager, cacheProvider: CacheProvider)
-        : Repository(networkManager, cacheProvider, ZERO_CACHE) {
+    class TestRepositoryWithoutCache(api: PlaceholderApi) : Repository<PlaceholderApi>(api, ZERO_CACHE) {
+        override fun idForCall(params: Any?): String = DEFAULT_DATA_ID
 
         override fun createCallAsync(params: Any?): Deferred<Response<*>> = lazyAsync {
             Log.d(TAG, "${this@TestRepositoryWithoutCache::class.java.simpleName} coroutine")

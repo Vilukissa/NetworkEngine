@@ -49,11 +49,10 @@ class NetworkManager internal constructor(
     fun <T> createApi(apiClass: Class<T>): T = retrofit.create(apiClass)
 
     @Suppress("UnnecessaryVariable", "LiftReturnOrAssignment")
-    suspend fun execute(repositoryClass: Class<out Repository>, dataId: String,
+    suspend fun execute(repositoryClass: Class<out Repository<*>>, dataId: String,
                         call: Deferred<Response<*>>,
                         cacheProvider: CacheProvider,
                         resultEditor: ResultEditor? = null): Data {
-
         val operationId: String = createOperationId(repositoryClass, dataId)
         var operation: Operation? = runningOperations.withSync { ops -> ops[operationId] }
         val result: Data
@@ -107,7 +106,7 @@ class NetworkManager internal constructor(
         return result
     }
 
-    private fun createOperationId(repositoryClass: Class<out Repository>, dataId: String): String {
+    private fun createOperationId(repositoryClass: Class<out Repository<*>>, dataId: String): String {
         return "${repositoryClass.canonicalName}_$dataId"
     }
 
@@ -142,6 +141,7 @@ class NetworkManager internal constructor(
     }
 
     interface ResultEditor {
+        // TODO: add parameters
         fun succeededResult(data: Any)
         fun failedResult(error: Any)
     }
