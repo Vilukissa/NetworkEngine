@@ -41,7 +41,7 @@ class CacheProvider internal constructor() {
     private fun getRepository(repoClass: Class<out Repository<*>>) =
             dataHolder[repoClass] ?: throw RepositoryNotFoundException()
 
-    data class Data(val id: String, val data: Any)
+    data class Data(val id: String, val data: Any, val isError: Boolean) // TODO: rename data -> response (Data.response)
 
     internal class DataList(private val sizeLimit: Int) {
         private val items = LinkedList<Data>()

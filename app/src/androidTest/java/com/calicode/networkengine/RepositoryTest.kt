@@ -24,7 +24,8 @@ class RepositoryTest {
         engine = createEngine(
                 listOf(Pair(TestRepository::class.java, PlaceholderApi::class.java),
                         Pair(TestRepositoryWithApi::class.java, TestApi::class.java),
-                        Pair(TestRepositoryWithoutCache::class.java, PlaceholderApi::class.java)),
+                        Pair(TestRepositoryWithoutCache::class.java, PlaceholderApi::class.java),
+                        Pair(TestRepositoryWithCustomErrorClass::class.java, TestApi::class.java)),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .runningOperationsLimit(5)
@@ -51,7 +52,7 @@ class RepositoryTest {
         engine!!::class.java.getDeclaredField("cacheProvider").apply {
             isAccessible = true
             (get(engine) as CacheProvider).putData(
-                    TestRepository::class.java, Data(DEFAULT_DATA_ID, testResult))
+                    TestRepository::class.java, Data(DEFAULT_DATA_ID, testResult, false))
         }
 
         val result: Data = runBlocking { engine!!.callRepository(TestRepository::class.java) }
@@ -142,6 +143,86 @@ class RepositoryTest {
         Assert.assertTrue(secondOperationTime in 5801..6199) // Give some space (400ms)
     }
 
+    @Test
+    fun testOperationFailure() {
+        RESTMockServer.whenGET(pathEndsWith("/test")).thenReturnEmpty(500) // Internal server error
+
+        val result: Data = runBlocking { engine!!.callRepository(TestRepositoryWithApi::class.java) }
+        Assert.assertTrue(result.isError)
+        Assert.assertTrue(result.data is String)
+        Assert.assertEquals("", result.data)
+    }
+
+    @Test
+    fun testCustomErrorClass() {
+        RESTMockServer.whenGET(pathEndsWith("/test")).thenReturnFile(500, "error.json")
+
+        val result: Data = runBlocking { engine!!.callRepository(TestRepositoryWithCustomErrorClass::class.java) }
+        Assert.assertTrue(result.isError)
+        Assert.assertTrue(result.data is TestRepositoryWithCustomErrorClass.CustomErrorClass)
+        Assert.assertEquals("User not found",
+                (result.data as TestRepositoryWithCustomErrorClass.CustomErrorClass).errorMsg)
+    }
+
+    @Test
+    fun testNetworkManagerWithDefaultErrorClass() {
+        // We need to create different engine for this test
+        val tmpEngine = createEngine(
+                listOf(Pair(TestRepositoryWithApi::class.java, TestApi::class.java)),
+                NetworkManagerBuilder()
+                        .baseUrl(RESTMockServer.getUrl())
+                        .defaultErrorClass(DefaultTestErrorClass::class.java)
+                        .build())
+
+        RESTMockServer.whenGET(pathEndsWith("/test")).thenReturnFile(500, "error_2.json")
+
+        val result: Data = runBlocking { tmpEngine.callRepository(TestRepositoryWithApi::class.java) }
+        Assert.assertTrue(result.isError)
+        Assert.assertTrue(result.data is DefaultTestErrorClass)
+        Assert.assertEquals(123, (result.data as DefaultTestErrorClass).errorId)
+    }
+
+    @Test
+    fun testDefaultErrorClassOverride() {
+        // We need to create different engine for this test
+        val tmpEngine = createEngine(
+                listOf(Pair(TestRepositoryWithCustomErrorClass::class.java, TestApi::class.java)),
+                NetworkManagerBuilder()
+                        .baseUrl(RESTMockServer.getUrl())
+                        .defaultErrorClass(DefaultTestErrorClass::class.java)
+                        .build())
+
+        RESTMockServer.whenGET(pathEndsWith("/test")).thenReturnFile(500, "error.json")
+
+        val result: Data = runBlocking { tmpEngine.callRepository(TestRepositoryWithCustomErrorClass::class.java) }
+        Assert.assertTrue(result.isError)
+        Assert.assertTrue(result.data is TestRepositoryWithCustomErrorClass.CustomErrorClass)
+        Assert.assertEquals("User not found",
+                (result.data as TestRepositoryWithCustomErrorClass.CustomErrorClass).errorMsg)
+    }
+
+    @Test
+    fun testEmptyErrorClassUsage() {
+        // We need to create different engine for this test
+        val tmpEngine = createEngine(
+                listOf(Pair(TestRepositoryWithEmptyErrorClass::class.java, TestApi::class.java)),
+                NetworkManagerBuilder()
+                        .baseUrl(RESTMockServer.getUrl())
+                        .defaultErrorClass(DefaultTestErrorClass::class.java)
+                        .build())
+
+        RESTMockServer.whenGET(pathEndsWith("/test")).thenReturnString(500, "PLAIN TEXT")
+
+        val result: Data = runBlocking { tmpEngine.callRepository(TestRepositoryWithEmptyErrorClass::class.java) }
+        Assert.assertTrue(result.isError)
+        Assert.assertTrue(result.data is String)
+        Assert.assertEquals("PLAIN TEXT", result.data)
+    }
+
+
+
+    /* * * * * * * * * * * * * TEST CLASSES * * * * * * * * * * * * * * * * * * */
+
     @Suppress("DeferredIsResult")
     interface TestApi {
         @GET("/test")
@@ -179,4 +260,24 @@ class RepositoryTest {
             Response.success("NO_CACHE_RESULT")
         }
     }
+
+    class TestRepositoryWithCustomErrorClass(api: TestApi) : Repository<TestApi>(api) {
+        override fun idForCall(params: Any?): String = DEFAULT_DATA_ID
+
+        override fun createCallAsync(params: Any?): Deferred<Response<*>> = api.getItem()
+
+        override fun errorClass(): Class<*>? = CustomErrorClass::class.java
+
+        class CustomErrorClass(val errorMsg: String)
+    }
+
+    class TestRepositoryWithEmptyErrorClass(api: TestApi) : Repository<TestApi>(api) {
+        override fun idForCall(params: Any?): String = DEFAULT_DATA_ID
+
+        override fun createCallAsync(params: Any?): Deferred<Response<*>> = api.getItem()
+
+        override fun errorClass(): Class<*>? = NetworkManager.EmptyErrorClass::class.java
+    }
+
+    class DefaultTestErrorClass(val errorId: Int)
 }

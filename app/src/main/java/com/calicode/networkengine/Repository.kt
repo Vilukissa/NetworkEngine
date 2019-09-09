@@ -12,4 +12,5 @@ abstract class Repository<T>(protected val api: T,
     abstract fun idForCall(params: Any?): String
     abstract fun createCallAsync(params: Any?): Deferred<Response<*>>
     open fun resultEditor(): ResultEditor? = null
+    open fun errorClass(): Class<*>? = null
 }

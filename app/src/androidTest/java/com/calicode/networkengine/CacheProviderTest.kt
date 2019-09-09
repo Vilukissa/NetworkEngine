@@ -46,22 +46,22 @@ class CacheProviderTest {
     fun testPutAndGet() {
         // Test zero (=no cache)
         cacheProvider.allocate(TestRepo::class.java, 0)
-        cacheProvider.putData(TestRepo::class.java, Data("ID", Unit))
+        cacheProvider.putData(TestRepo::class.java, Data("ID", Unit, false))
         Assert.assertEquals(null, cacheProvider.getData(TestRepo::class.java, "ID"))
 
         // Test with size
         cacheProvider.allocate(TestRepo::class.java, 1)
-        cacheProvider.putData(TestRepo::class.java, Data("ID2", String))
+        cacheProvider.putData(TestRepo::class.java, Data("ID2", String, false))
         Assert.assertEquals(String, cacheProvider.getData(TestRepo::class.java, "ID2")!!.data)
         // Test updating
-        cacheProvider.putData(TestRepo::class.java, Data("ID2", Int))
+        cacheProvider.putData(TestRepo::class.java, Data("ID2", Int, false))
         Assert.assertEquals(Int, cacheProvider.getData(TestRepo::class.java, "ID2")!!.data)
     }
 
     @Test
     fun testPutAndRemove() {
         cacheProvider.allocate(TestRepo::class.java, 1)
-        cacheProvider.putData(TestRepo::class.java, Data("PUT_N_REMOVE", String))
+        cacheProvider.putData(TestRepo::class.java, Data("PUT_N_REMOVE", String, false))
         Assert.assertEquals(String, cacheProvider.getData(TestRepo::class.java, "PUT_N_REMOVE")!!.data)
         cacheProvider.removeData(TestRepo::class.java, "PUT_N_REMOVE")
         Assert.assertEquals(null, cacheProvider.getData(TestRepo::class.java, "PUT_N_REMOVE"))
@@ -82,7 +82,7 @@ class CacheProviderTest {
     @Test
     fun testExceptions() {
         try {
-            cacheProvider.putData(TestRepo::class.java, Data("", String))
+            cacheProvider.putData(TestRepo::class.java, Data("", String, false))
             Assert.fail()
         } catch (ignored: RepositoryNotFoundException) {}
 

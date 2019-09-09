@@ -18,7 +18,7 @@ private const val DEFAULT_RUNNING_OPERATION_LIMIT = 1
  * - create API calls via repositories
  * - ....
  */
-fun createEngine(repositoryApiPairs: List<Pair<Class<out Repository<*>>, Class<out Any>>>,
+fun createEngine(repositoryApiPairs: List<Pair<Class<out Repository<*>>, Class<*>>>,
                    networkManager: NetworkManager): NetworkEngine {
     val repoInstanceList = HashMap<Class<out Repository<*>>, Repository<*>>()
     val cacheProvider = CacheProvider()
@@ -43,6 +43,7 @@ fun createEngine(repositoryApiPairs: List<Pair<Class<out Repository<*>>, Class<o
 class NetworkManagerBuilder {
     private var baseUrl: String = ""
     private var runningOperationsLimit: Int = DEFAULT_RUNNING_OPERATION_LIMIT
+    private var defaultErrorClass: Class<*>? = null
     // Other stuff, maybe like timeouts?
 
     fun baseUrl(url: String): NetworkManagerBuilder {
@@ -55,10 +56,15 @@ class NetworkManagerBuilder {
         return this
     }
 
+    fun defaultErrorClass(errorClass: Class<*>): NetworkManagerBuilder {
+        defaultErrorClass = errorClass
+        return this
+    }
+
     fun build(): NetworkManager {
         if (baseUrl.isEmpty()) throw IllegalStateException("Base URL must be defined!")
         // Other mandatory fields...
-        return NetworkManager(baseUrl, runningOperationsLimit)
+        return NetworkManager(baseUrl, runningOperationsLimit, defaultErrorClass)
     }
 }
 
@@ -77,8 +83,8 @@ class NetworkEngine(private val networkManager: NetworkManager,
         val repo = getRepository(repoClass)
         val dataId = repo.idForCall(params)
         return cacheProvider.getData(repoClass, dataId)
-                ?: networkManager.execute(repoClass, dataId,
-                        repo.createCallAsync(params), cacheProvider, repo.resultEditor())
+                ?: networkManager.execute(repoClass, dataId, repo.createCallAsync(params), cacheProvider,
+                        repo.errorClass(), repo.resultEditor())
     }
 
     fun cancelOperations() { TODO() }

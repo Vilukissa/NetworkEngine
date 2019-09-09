@@ -11,16 +11,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.ResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
 import okhttp3.logging.HttpLoggingInterceptor.Level
+import retrofit2.Converter
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.jackson.JacksonConverterFactory
 import java.util.*
 
+
 class NetworkManager internal constructor(
         baseUrl: String,
-        private val runningOperationsLimit: Int) {
+        private val runningOperationsLimit: Int,
+        private val defaultErrorClass: Class<*>? = null) {
 
     private val retrofit: Retrofit
     private val runningOperations = HashMap<String, Operation>()
@@ -52,14 +56,16 @@ class NetworkManager internal constructor(
     suspend fun execute(repositoryClass: Class<out Repository<*>>, dataId: String,
                         call: Deferred<Response<*>>,
                         cacheProvider: CacheProvider,
+                        errorClass: Class<*>? = null,
                         resultEditor: ResultEditor? = null): Data {
         val operationId: String = createOperationId(repositoryClass, dataId)
         var operation: Operation? = runningOperations.withSync { ops -> ops[operationId] }
+        val errorConverter: Converter<ResponseBody, Any>? = createErrorConverterIfNeeded(errorClass)
         val result: Data
 
         if (operation == null) {
             Log.d(TAG, "Creating new operation $operationId")
-            operation = Operation(dataId, call)
+            operation = Operation(dataId, call, errorConverter)
 
             val shouldWait: Boolean = runningOperations.withSync { ops ->
                 Log.d(TAG, "Running operations size check ${ops.size} == $runningOperationsLimit")
@@ -106,11 +112,26 @@ class NetworkManager internal constructor(
         return result
     }
 
-    private fun createOperationId(repositoryClass: Class<out Repository<*>>, dataId: String): String {
-        return "${repositoryClass.canonicalName}_$dataId"
+    /**
+     * Repository's declared error class is priority 1. Second comes NetworkManager's defaultErrorClass.
+     * However defaultErrorClass can be overridden in Repository level with EmptyErrorClass if error
+     * is needed simply as a String (Response.errorBody().string()) instead of parsing the error
+     * in any specific error class.
+     */
+    private fun createErrorConverterIfNeeded(repositoryErrorClass: Class<*>?): Converter<ResponseBody, Any>? {
+        val errorClass: Class<*>? =
+                if (repositoryErrorClass != EmptyErrorClass::class.java) repositoryErrorClass ?: defaultErrorClass
+                else null
+        return errorClass?.let { retrofit.responseBodyConverter<Any>(it, emptyArray()) }
     }
 
-    private class Operation(private val dataId: String, private val job: Deferred<Response<*>>) {
+    private fun createOperationId(repositoryClass: Class<out Repository<*>>, dataId: String): String {
+        return "${repositoryClass.canonicalName};$dataId"
+    }
+
+    private class Operation(private val dataId: String,
+                            private val job: Deferred<Response<*>>,
+                            private val errorConverter: Converter<ResponseBody, Any>?) {
 
         var isPending = false
 
@@ -132,13 +153,29 @@ class NetworkManager internal constructor(
             return handleResponse(job.await())
         }
 
+        @Suppress("LiftReturnOrAssignment")
         private fun handleResponse(response: Response<*>): Data {
-            // TODO: proper error handling...
-//            if (response.isSuccessful)
-            val obj = response.body()!!
-            return Data(dataId, obj)
+            if (response.isSuccessful) {
+                return Data(dataId, response.body()!!, false)
+            } else {
+                val errorBody = response.errorBody()!!
+                if (errorConverter != null) {
+                    try {
+                        return Data(dataId, errorConverter.convert(errorBody), true)
+                    } catch (ex: Exception) {
+                        throw IllegalStateException("Could not convert error body.")
+                    }
+                } else {
+                    return Data(dataId, errorBody.string(), true)
+                }
+            }
         }
     }
+
+    // This can be used in NetworkManager.execute as errorClass if Repository does
+    // not want to use default error class converter and does not declare own error class.
+    // Data field (in Data object) will contain the error body as string.
+    class EmptyErrorClass
 
     interface ResultEditor {
         // TODO: add parameters
