@@ -15,7 +15,7 @@ import retrofit2.http.GET
 /**
  * Tests for the whole networking pipe: Repository, CacheProvider and NetworkManager.
  */
-class RepositoryTest {
+class NetworkEngineTest {
 
     private var engine: NetworkEngine? = null
 
