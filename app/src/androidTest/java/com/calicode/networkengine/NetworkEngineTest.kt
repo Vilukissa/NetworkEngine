@@ -22,10 +22,10 @@ class NetworkEngineTest {
     @Before
     fun setUp() {
         engine = createEngine(
-                listOf(Pair(TestRepository::class.java, PlaceholderApi::class.java),
-                        Pair(TestRepositoryWithApi::class.java, TestApi::class.java),
-                        Pair(TestRepositoryWithoutCache::class.java, PlaceholderApi::class.java),
-                        Pair(TestRepositoryWithCustomErrorClass::class.java, TestApi::class.java)),
+                listOf(TestRepository::class.java,
+                        TestRepositoryWithApi::class.java,
+                        TestRepositoryWithoutCache::class.java,
+                        TestRepositoryWithCustomErrorClass::class.java),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .runningOperationsLimit(5)
@@ -115,7 +115,7 @@ class NetworkEngineTest {
     fun testOperationCount() {
         // We need to create different engine for this test
         val tmpEngine = createEngine(
-                listOf(Pair(TestRepository::class.java, PlaceholderApi::class.java)),
+                listOf(TestRepository::class.java),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .runningOperationsLimit(1) // This is the important part!
@@ -168,7 +168,7 @@ class NetworkEngineTest {
     fun testNetworkManagerWithDefaultErrorClass() {
         // We need to create different engine for this test
         val tmpEngine = createEngine(
-                listOf(Pair(TestRepositoryWithApi::class.java, TestApi::class.java)),
+                listOf(TestRepositoryWithApi::class.java),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .defaultErrorClass(DefaultTestErrorClass::class.java)
@@ -186,7 +186,7 @@ class NetworkEngineTest {
     fun testDefaultErrorClassOverride() {
         // We need to create different engine for this test
         val tmpEngine = createEngine(
-                listOf(Pair(TestRepositoryWithCustomErrorClass::class.java, TestApi::class.java)),
+                listOf(TestRepositoryWithCustomErrorClass::class.java),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .defaultErrorClass(DefaultTestErrorClass::class.java)
@@ -205,7 +205,7 @@ class NetworkEngineTest {
     fun testEmptyErrorClassUsage() {
         // We need to create different engine for this test
         val tmpEngine = createEngine(
-                listOf(Pair(TestRepositoryWithEmptyErrorClass::class.java, TestApi::class.java)),
+                listOf(TestRepositoryWithEmptyErrorClass::class.java),
                 NetworkManagerBuilder()
                         .baseUrl(RESTMockServer.getUrl())
                         .defaultErrorClass(DefaultTestErrorClass::class.java)

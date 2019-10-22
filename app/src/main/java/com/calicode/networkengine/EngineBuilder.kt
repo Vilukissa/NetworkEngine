@@ -1,5 +1,7 @@
 package com.calicode.networkengine
 
+import android.util.Log
+
 private const val DEFAULT_RUNNING_OPERATION_LIMIT = 1
 
 /** Structure of the engine:
@@ -18,19 +20,36 @@ private const val DEFAULT_RUNNING_OPERATION_LIMIT = 1
  * - create API calls via repositories
  * - ....
  */
-fun createEngine(repositoryApiPairs: List<Pair<Class<out Repository<*>>, Class<*>>>,
-                   networkManager: NetworkManager): NetworkEngine {
+fun createEngine(repositoryList: List<Class<out Repository<*>>>,
+                 networkManager: NetworkManager): NetworkEngine {
     val repoInstanceList = HashMap<Class<out Repository<*>>, Repository<*>>()
     val cacheProvider = CacheProvider()
     try {
-        repositoryApiPairs.forEach { repoApiPair ->
-            val repoClass = repoApiPair.first
-            val apiClass = repoApiPair.second
-            val apiForRepo = networkManager.createApi(apiClass)
+        val logBuilder = StringBuilder("Creating repositories:")
+        repositoryList.forEach { repoClass ->
+            var apiClass: Class<*>? = null
+            repoClass.declaredConstructors.let { constructors ->
+                if (constructors.size > 1) {
+                    throw IllegalStateException("Repository class should contain only one constructor")
+                }
+                constructors[0].parameterTypes.let { parameterTypes ->
+                    if (parameterTypes.size > 1) {
+                        throw IllegalStateException("Repository's constructor should contain only one parameter")
+                    }
+                    val parameterType = parameterTypes[0]
+                    if (!parameterType.isInterface) {
+                        throw IllegalStateException("Repository's constructor parameter should be interface")
+                    }
+                    apiClass = parameterType
+                }
+            }
+            val apiForRepo = networkManager.createApi(apiClass!!)
             val repository = repoClass.getDeclaredConstructor(apiClass).newInstance(apiForRepo)
+            logBuilder.append("\n\tClass=${repository.javaClass.simpleName}\n\tApi=${apiClass!!.simpleName}\n\t-----------")
             repoInstanceList[repoClass] = repository
             cacheProvider.allocate(repoClass, repository.cacheSize)
         }
+        Log.d(TAG, logBuilder.toString())
     } catch (exception: Exception) {
         // TODO: debug check...?
         exception.printStackTrace()
